@@ -41,8 +41,10 @@ jobs:
       - name: Install build tools
         run: |
           set -euo pipefail
+          mkdir -p out
+          exec > >(tee out/setup.log) 2>&1
           npm install --global yarn@1.22.22
-          python -m pip install 'conan==2.24.0' 'cmake==3.31.8' ninja 'Pillow==11.3.0'
+          python -m pip install 'conan==2.24.0' 'cmake==3.31.10' ninja 'Pillow==11.3.0'
           brew install autoconf automake libtool pkg-config nasm
           conan profile detect --force
           xcodebuild -version
@@ -54,7 +56,10 @@ jobs:
           key: dns-2.10.1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('ci/build-dns.sh') }}
       - name: Build public DNS framework
         if: steps.dns-cache.outputs.cache-hit != 'true'
-        run: bash ci/build-dns.sh
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash ci/build-dns.sh 2>&1 | tee out/dns-build.log
       - name: Prepare unsigned project
         run: python ci/prepare.py
       - name: Build app and all embedded extensions
