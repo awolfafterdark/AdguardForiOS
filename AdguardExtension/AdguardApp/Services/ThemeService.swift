@@ -17,6 +17,7 @@
 //
 
 import UIKit
+import ImageIO
 
 /// ThemeService - service is responsible for dark/light theme switching
 protocol ThemeServiceProtocol {
@@ -424,3 +425,64 @@ final class ThemeService: ThemeServiceProtocol {
         }
     }
 }
+
+// Shared by each target that compiles ThemeService. No application-only APIs.
+final class InternalAppearance {
+    static let nameKey = "internal.appearance.name"
+    static let backgroundURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("internal-background.jpg")
+    private static var cachedImage: UIImage?
+    private static var loaded = false
+    private static var cachedColor: UIColor?
+    private static var cacheKey = ""
+
+    static var name: String {
+        get { UserDefaults.standard.string(forKey: nameKey) ?? (Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? "Ad Getr3kt") }
+        set { UserDefaults.standard.set(newValue, forKey: nameKey) }
+    }
+
+    static func background(dark: Bool) -> UIColor? {
+        if !loaded { cachedImage = UIImage(contentsOfFile: backgroundURL.path); loaded = true }
+        guard let image = cachedImage else { return nil }
+        let size = UIScreen.main.bounds.size
+        let key = "\(size.width):\(size.height):\(dark)"
+        if key == cacheKey, let color = cachedColor { return color }
+        let renderer = UIGraphicsImageRenderer(size: size)
+        let rendered = renderer.image { context in
+            let scale = max(size.width / image.size.width, size.height / image.size.height)
+            let scaled = CGSize(width: image.size.width * scale, height: image.size.height * scale)
+            image.draw(in: CGRect(x: (size.width-scaled.width)/2, y: (size.height-scaled.height)/2, width: scaled.width, height: scaled.height))
+            (dark ? UIColor.black : UIColor.white).withAlphaComponent(0.82).setFill()
+            context.fill(CGRect(origin: .zero, size: size))
+        }
+        let color = UIColor(patternImage: rendered)
+        cachedColor = color; cacheKey = key
+        return color
+    }
+
+    static func saveBackground(_ url: URL) throws {
+        let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
+        guard size < 30_000_000,
+              let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, [
+                kCGImageSourceCreateThumbnailFromImageAlways: true,
+                kCGImageSourceCreateThumbnailWithTransform: true,
+                kCGImageSourceThumbnailMaxPixelSize: 2048
+              ] as CFDictionary),
+              let data = UIImage(cgImage: cgImage).jpegData(compressionQuality: 0.85)
+        else { throw NSError(domain: "Appearance", code: 1, userInfo: [NSLocalizedDescriptionKey: "Choose an image smaller than 30 MB."]) }
+        try FileManager.default.createDirectory(at: backgroundURL.deletingLastPathComponent(), withIntermediateDirectories: true, attributes: nil)
+        try data.write(to: backgroundURL, options: .atomic)
+        invalidate()
+    }
+
+    static func resetBackground() throws {
+        if FileManager.default.fileExists(atPath: backgroundURL.path) { try FileManager.default.removeItem(at: backgroundURL) }
+        invalidate()
+    }
+
+    static func invalidate() {
+        cachedImage = nil; cachedColor = nil; loaded = false; cacheKey = ""
+        NotificationCenter.default.post(name: Notification.Name("themeChanged"), object: nil)
+    }
+}
+
