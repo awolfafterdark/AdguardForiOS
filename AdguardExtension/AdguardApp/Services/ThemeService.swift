@@ -92,7 +92,7 @@ final class ThemeService: ThemeServiceProtocol {
     }
 
     var backgroundColor: UIColor {
-        return configuration.darkTheme ? UIColor.AdGuardColor.darkBackground : .white
+        return InternalAppearance.background(dark: configuration.darkTheme) ?? (configuration.darkTheme ? UIColor.AdGuardColor.darkBackground : .white)
     }
 
     var invertedBackgroundColor: UIColor {

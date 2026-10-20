@@ -44,7 +44,11 @@ curl -o "${SRCROOT}/YouTubeAdsActionExtension/userscript.js" https://raw.githubu
 
 
 echo "============================== BUILD BUILDER ==================================="
-xcodebuild -quiet -workspace "${SRCROOT}/../AdguardSafariExtension-iOS.xcworkspace" -scheme "Builder" -configuration "Debug" -derivedDataPath "${BUILDER_DIR}"
+unsigned_flags=()
+if [ "${CODE_SIGNING_ALLOWED:-YES}" = "NO" ]; then
+    unsigned_flags=(CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY= DEVELOPMENT_TEAM=)
+fi
+xcodebuild "${unsigned_flags[@]}" -quiet -workspace "${SRCROOT}/../AdguardSafariExtension-iOS.xcworkspace" -scheme "Builder" -configuration "Debug" -derivedDataPath "${BUILDER_DIR}"
 
 
 echo "================================ RUN BUILDER ==================================="
@@ -53,3 +57,4 @@ echo "${BUILDER_RESOURCES_DIR}"
 "${BUILDER_DIR}/Build/Products/Debug/Builder" --${CONFIGURATION} "${BUILDER_RESOURCES_DIR}" || exit 1
 
 echo "============================ RUN BUILDER DONE =================================="
+

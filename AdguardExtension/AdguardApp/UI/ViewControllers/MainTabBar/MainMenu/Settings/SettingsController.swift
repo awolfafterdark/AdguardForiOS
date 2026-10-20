@@ -62,6 +62,7 @@ class SettingsController: UITableViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
 
+        navigationItem.rightBarButtonItem = UIBarButtonItem(title: "Appearance", style: .plain, target: self, action: #selector(openInternalAppearance))
         fillHeaderTitles()
         tableView.sectionHeaderHeight = 40
         tableView.rowHeight = UITableView.automaticDimension
@@ -85,6 +86,7 @@ class SettingsController: UITableViewController {
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         updateTheme()
+        title = InternalAppearance.name
     }
 
     override func tableView(_ tableView: UITableView, viewForFooterInSection section: Int) -> UIView? {
@@ -330,5 +332,161 @@ extension SettingsController: ThemableProtocol {
         theme.setupSwitch(invertedSwitch)
         tableView.reloadData()
         updateUI()
+    }
+}
+
+
+// Internal appearance controls. Kept in this compilation unit so both app targets
+// include them without altering the extension target source membership.
+import UIKit
+import ImageIO
+
+final class InternalAppearance {
+    static let nameKey = "internal.appearance.name"
+    static let backgroundURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("internal-background.jpg")
+    private static var cachedImage: UIImage?
+    private static var loaded = false
+    private static var cachedColor: UIColor?
+    private static var cacheKey = ""
+
+    static var name: String {
+        get { UserDefaults.standard.string(forKey: nameKey) ?? (Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? "Ad Getr3kt") }
+        set { UserDefaults.standard.set(newValue, forKey: nameKey) }
+    }
+
+    static func background(dark: Bool) -> UIColor? {
+        if !loaded { cachedImage = UIImage(contentsOfFile: backgroundURL.path); loaded = true }
+        guard let image = cachedImage else { return nil }
+        let size = UIScreen.main.bounds.size
+        let key = "\(size.width):\(size.height):\(dark)"
+        if key == cacheKey, let color = cachedColor { return color }
+        let renderer = UIGraphicsImageRenderer(size: size)
+        let rendered = renderer.image { context in
+            let scale = max(size.width / image.size.width, size.height / image.size.height)
+            let scaled = CGSize(width: image.size.width * scale, height: image.size.height * scale)
+            image.draw(in: CGRect(x: (size.width-scaled.width)/2, y: (size.height-scaled.height)/2, width: scaled.width, height: scaled.height))
+            (dark ? UIColor.black : UIColor.white).withAlphaComponent(0.82).setFill()
+            context.fill(CGRect(origin: .zero, size: size))
+        }
+        let color = UIColor(patternImage: rendered)
+        cachedColor = color; cacheKey = key
+        return color
+    }
+
+    static func saveBackground(_ url: URL) throws {
+        let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
+        guard size < 30_000_000,
+              let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, [
+                kCGImageSourceCreateThumbnailFromImageAlways: true,
+                kCGImageSourceCreateThumbnailWithTransform: true,
+                kCGImageSourceThumbnailMaxPixelSize: 2048
+              ] as CFDictionary),
+              let data = UIImage(cgImage: cgImage).jpegData(compressionQuality: 0.85)
+        else { throw NSError(domain: "Appearance", code: 1, userInfo: [NSLocalizedDescriptionKey: "Choose an image smaller than 30 MB."]) }
+        try FileManager.default.createDirectory(at: backgroundURL.deletingLastPathComponent(), withIntermediateDirectories: true, attributes: nil)
+        try data.write(to: backgroundURL, options: .atomic)
+        invalidate()
+    }
+
+    static func resetBackground() throws {
+        if FileManager.default.fileExists(atPath: backgroundURL.path) { try FileManager.default.removeItem(at: backgroundURL) }
+        invalidate()
+    }
+
+    static func invalidate() {
+        cachedImage = nil; cachedColor = nil; loaded = false; cacheKey = ""
+        NotificationCenter.default.post(name: .themeChanged, object: nil)
+    }
+}
+
+final class InternalAppearanceController: UITableViewController, UIDocumentPickerDelegate {
+    private let rows = ["Choose background image", "Remove background image", "Change app icon", "Change in-app name", "Home Screen name"]
+    private var iconChangeInProgress = false
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        title = "Appearance"
+        tableView.register(UITableViewCell.self, forCellReuseIdentifier: "appearance")
+    }
+
+    override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int { rows.count }
+    override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
+        let cell = UITableViewCell(style: .subtitle, reuseIdentifier: nil)
+        cell.textLabel?.text = rows[indexPath.row]
+        cell.textLabel?.numberOfLines = 0
+        cell.detailTextLabel?.numberOfLines = 0
+        if indexPath.row == 3 { cell.detailTextLabel?.text = InternalAppearance.name }
+        if indexPath.row == 4 { cell.detailTextLabel?.text = "Set app_name in the unsigned IPA workflow, then sign and reinstall that IPA." }
+        return cell
+    }
+
+    override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
+        tableView.deselectRow(at: indexPath, animated: true)
+        switch indexPath.row {
+        case 0:
+            let picker = UIDocumentPickerViewController(documentTypes: ["public.image"], in: .import)
+            picker.delegate = self
+            present(picker, animated: true)
+        case 1:
+            do { try InternalAppearance.resetBackground() } catch { show(error.localizedDescription) }
+        case 2: chooseIcon()
+        case 3:
+            let alert = UIAlertController(title: "In-app name", message: "This changes the name shown inside this build. Home Screen renaming requires rebuilding and reinstalling.", preferredStyle: .alert)
+            alert.addTextField { $0.text = InternalAppearance.name; $0.autocapitalizationType = .words }
+            alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+            alert.addAction(UIAlertAction(title: "Save", style: .default) { [weak self, weak alert] _ in
+                let value = alert?.textFields?.first?.text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                guard !value.isEmpty, value.count <= 80, value.unicodeScalars.allSatisfy({ !CharacterSet.controlCharacters.contains($0) }) else {
+                    self?.show("Use 1–80 printable characters."); return
+                }
+                InternalAppearance.name = value
+                self?.tableView.reloadData()
+            })
+            present(alert, animated: true)
+        default: show("Change the app_name input under GitHub Actions → Ad Getr3kt unsigned IPA → Run workflow. Sign and reinstall the resulting IPA.")
+        }
+    }
+
+    func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
+        guard let url = urls.first else { return }
+        let scoped = url.startAccessingSecurityScopedResource()
+        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+        do { try InternalAppearance.saveBackground(url) } catch { show(error.localizedDescription) }
+    }
+
+    private func chooseIcon() {
+        guard UIApplication.shared.supportsAlternateIcons else { show("This installation does not support alternate icons."); return }
+        guard !iconChangeInProgress else { return }
+        let alert = UIAlertController(title: "App icon", message: "Choose an icon included with this build.", preferredStyle: .actionSheet)
+        let icons = Bundle.main.object(forInfoDictionaryKey: "CFBundleIcons") as? [String: Any]
+        let alternatives = icons?["CFBundleAlternateIcons"] as? [String: Any] ?? [:]
+        for name in ["Default"] + alternatives.keys.sorted() {
+            alert.addAction(UIAlertAction(title: name, style: .default) { [weak self] _ in
+                self?.iconChangeInProgress = true
+                UIApplication.shared.setAlternateIconName(name == "Default" ? nil : name) { error in
+                    DispatchQueue.main.async {
+                        self?.iconChangeInProgress = false
+                        if let error = error { self?.show(error.localizedDescription) }
+                    }
+                }
+            })
+        }
+        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+        alert.popoverPresentationController?.sourceView = view
+        alert.popoverPresentationController?.sourceRect = CGRect(x: view.bounds.midX, y: view.bounds.midY, width: 1, height: 1)
+        present(alert, animated: true)
+    }
+
+    private func show(_ message: String) {
+        let alert = UIAlertController(title: "Appearance", message: message, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "OK", style: .default))
+        present(alert, animated: true)
+    }
+}
+
+extension SettingsController {
+    @objc func openInternalAppearance() {
+        navigationController?.pushViewController(InternalAppearanceController(style: .grouped), animated: true)
     }
 }

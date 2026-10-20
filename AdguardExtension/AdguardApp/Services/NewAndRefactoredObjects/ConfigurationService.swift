@@ -137,7 +137,7 @@ final class ConfigurationService: ConfigurationServiceProtocol {
     /// Advanced mode state
     var advancedMode: Bool {
         get {
-            resources.sharedDefaults().bool(forKey: AEDefaultsDeveloperMode)
+            resources.sharedDefaults().object(forKey: AEDefaultsDeveloperMode) as? Bool ?? true
         }
         set {
             if newValue != advancedMode {
