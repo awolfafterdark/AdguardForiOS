@@ -20,7 +20,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   build:
-    runs-on: macos-latest
+    runs-on: macos-26-intel
     timeout-minutes: 180
     env:
       APP_NAME: ${{ inputs.app_name || 'aWolfAfterDar’s Ad Getr3kt' }}
