@@ -17,6 +17,7 @@
 //
 
 #import "AESharedResources.h"
+#import "AEAppGroupResolver.h"
 #import "ACommons/ACLang.h"
 #import "NSString+Utils.h"
 
@@ -142,9 +143,24 @@ NSString* LastDnsFiltersUpdateTime = @"LastDnsFiltersUpdateTime";
 
 - (instancetype)init {
     self = [super init];
-    NSString* groupId = AE_SHARED_RESOURCES_GROUP;
-    _containerFolderUrl = [[NSFileManager defaultManager] containerURLForSecurityApplicationGroupIdentifier:groupId];
-    _sharedUserDefaults = [[NSUserDefaults alloc] initWithSuiteName:AE_SHARED_RESOURCES_GROUP];
+    if (!self) return nil;
+    static NSURL *containerURL;
+    static NSString *groupId;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        NSString *resolvedGroup = nil;
+        containerURL = AEResolveAppGroup(AE_SHARED_RESOURCES_GROUP, NSBundle.mainBundle.bundleURL,
+            ^NSURL *(NSString *group) {
+                return [NSFileManager.defaultManager containerURLForSecurityApplicationGroupIdentifier:group];
+            }, &resolvedGroup);
+        groupId = resolvedGroup;
+    });
+    if (!containerURL || !groupId) {
+        [NSException raise:NSInternalInconsistencyException
+                    format:@"No accessible shared App Group. Re-sign the app and all extensions with a common App Group authorized by their profiles."];
+    }
+    _containerFolderUrl = containerURL;
+    _sharedUserDefaults = [[NSUserDefaults alloc] initWithSuiteName:groupId];
     return self;
 }
 
@@ -277,4 +293,3 @@ NSString* LastDnsFiltersUpdateTime = @"LastDnsFiltersUpdateTime";
 }
 
 @end
-

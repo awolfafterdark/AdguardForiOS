@@ -54,6 +54,12 @@ jobs:
         with:
           path: .internal/AGDnsProxy.xcframework
           key: dns-2.10.1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('ci/build-dns.sh') }}
+      - name: Test shared App Group resolution
+        shell: bash
+        run: |
+          set -euo pipefail
+          clang -fobjc-arc -fblocks -framework Foundation ci/test-app-groups.m -o "$RUNNER_TEMP/test-app-groups"
+          "$RUNNER_TEMP/test-app-groups" 2>&1 | tee out/app-groups-test.log
       - name: Build public DNS framework
         if: steps.dns-cache.outputs.cache-hit != 'true'
         shell: bash

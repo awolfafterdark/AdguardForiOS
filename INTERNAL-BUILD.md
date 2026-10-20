@@ -17,6 +17,8 @@ Settings has an **Appearance** button. Import a background from Files (downsampl
 
 ## Signing afterwards
 
+The app and extensions now share one App Group resolver for preferences, logs, databases and filter files. It preserves the configured group when accessible. If re-signing changes the authorized groups, it reads group candidates from the containing app's embedded provisioning profile, sorts them consistently, and uses only a group for which iOS returns an accessible container. Extensions read the same host profile even when they have no embedded profile of their own. All targets must still be signed with a common authorized group; this does not grant missing capabilities. No user profiles or signer-specific group identifiers are built into this change. The workflow runs native Foundation regression checks for this resolution before building the app.
+
 Sign all nested frameworks, extensions and the host app. A certificate alone does not grant capabilities: matching profiles must authorize each bundle ID, the common App Group, and the DNS/packet tunnel Network Extension entitlements. Re-signing tools that strip these capabilities can install an app whose DNS protection or shared extension storage fails. Source entitlements are preserved in the repo; `signing-reference.json` records the built bundle IDs. Workflow builds retain the upstream IDs intentionally because those IDs also occur in extension communication code.
 
 ## Validation status

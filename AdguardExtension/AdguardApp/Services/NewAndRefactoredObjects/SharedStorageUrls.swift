@@ -57,12 +57,13 @@ struct SharedStorageUrls: SharedStorageUrlsProtocol {
     let advancedRulesFileUrl: URL
     let statisticsFolderUrl: URL
 
-    private static let sharedResourcesGroup = Bundle.main.infoDictionary!["SharedResourcesGroup"] as! String
 }
 
 extension SharedStorageUrls {
     init() {
-        self.sharedContainerUrl = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: Self.sharedResourcesGroup)!
+        // Use the same resolved container as logs and shared preferences. A
+        // re-signing profile may authorize different groups from Info.plist.
+        self.sharedContainerUrl = AESharedResources().sharedResuorcesURL()
         self.dbFolderUrl = sharedContainerUrl.appendingPathComponent("db_files", isDirectory: true)
         self.filtersFolderUrl = sharedContainerUrl.appendingPathComponent("filters", isDirectory: true)
         self.dnsFiltersFolderUrl = sharedContainerUrl.appendingPathComponent("dns_filters", isDirectory: true)
