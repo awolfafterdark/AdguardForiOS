@@ -1,0 +1,53 @@
+name: Share corrected IPA
+on:
+  push:
+    branches: [codex/share-ipa-20261020]
+    paths: [.github/workflows/share-ipa.yml]
+permissions:
+  actions: read
+  contents: read
+jobs:
+  upload:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: Ad-Getr3kt-unsigned-7
+          run-id: 39454363564
+          github-token: ${{ github.token }}
+          path: download
+      - name: Verify and upload the corrected IPA
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s  %s\n' '88ad1fc75f2664fdc143cbfab0404322c8b891cb8885c1a518a72a28f92023c4' 'download/Ad-Getr3kt-unsigned.ipa' | sha256sum --check -
+          curl --fail-with-body --silent --show-error --connect-timeout 20 --max-time 240 \
+            -H 'ngrok-skip-browser-warning: 1' \
+            --upload-file download/Ad-Getr3kt-unsigned.ipa \
+            --output upload-response.txt \
+            'https://nondurable-tabetha-cellular.ngrok-free.dev/Ad-Getr3kt-AppGroup-Fix-unsigned.ipa'
+          python3 - <<'PY'
+          import hashlib, os, pathlib, re, urllib.parse, urllib.request
+          body = pathlib.Path("upload-response.txt").read_text().strip()
+          matches = re.findall(r"https?://[^\s<>\"']+", body)
+          if not matches:
+              raise SystemExit("Upload returned no URL: " + body[:500])
+          parsed = urllib.parse.urlsplit(matches[0])
+          if parsed.hostname != "nondurable-tabetha-cellular.ngrok-free.dev":
+              raise SystemExit("Unexpected upload response host")
+          url = urllib.parse.urlunsplit(("https", parsed.netloc, parsed.path, parsed.query, ""))
+          request = urllib.request.Request(url, headers={"ngrok-skip-browser-warning": "1"})
+          digest = hashlib.sha256()
+          size = 0
+          with urllib.request.urlopen(request, timeout=60) as response:
+              while chunk := response.read(1024 * 1024):
+                  digest.update(chunk)
+                  size += len(chunk)
+          if digest.hexdigest() != "88ad1fc75f2664fdc143cbfab0404322c8b891cb8885c1a518a72a28f92023c4":
+              raise SystemExit("Uploaded file checksum mismatch")
+          print("UPLOAD_URL=" + url)
+          print("DOWNLOAD_VERIFIED_BYTES=" + str(size))
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as summary:
+              summary.write("[Download the corrected unsigned IPA](" + url + ")\n\nSHA-256 verified after upload.\n")
+          PY
